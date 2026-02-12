@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-kaola-heartmula"
-description = "ComfyUI node for HeartMuLa HeartTranscriptor — Whisper-based lyrics transcription optimized for music scenes"
+description = "ComfyUI nodes for HeartMuLa - Music generation and lyrics transcription pipeline"
 version = "0.0.1"
 license = { text = "Apache-2.0" }
 dependencies = [
@@ -15,7 +15,7 @@ Repository = "https://github.com/kana112233/ComfyUI-kaola-heartMuLa"
 
 [tool.comfy]
 PublisherId = "kaola"
-DisplayName = "HeartMuLa HeartTranscriptor"
+DisplayName = "comfyui-kaola-heartmula"
 Icon = ""
 
 [build-system]
