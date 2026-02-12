@@ -552,6 +552,19 @@ class HeartMuLaGenerator:
                     "tooltip": "Comma-separated style tags without spaces. "
                                "e.g. piano,happy,wedding,synthesizer",
                 }),
+                "seed": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 0xffffffffffffffff,
+                    "tooltip": "Random seed for reproducible generation. Same seed = same output.",
+                }),
+                "batch_size": ("INT", {
+                    "default": 1,
+                    "min": 1,
+                    "max": 10,
+                    "step": 1,
+                    "tooltip": "Number of audio variations to generate.",
+                }),
                 "max_audio_length_ms": ("INT", {
                     "default": 240000,
                     "min": 10000,
@@ -589,62 +602,94 @@ class HeartMuLaGenerator:
     CATEGORY = "HeartMuLa"
     OUTPUT_NODE = True
 
-    def generate(self, pipeline, lyrics, tags, max_audio_length_ms,
+    def generate(self, pipeline, lyrics, tags, seed, batch_size, max_audio_length_ms,
                  topk, temperature, cfg_scale):
         import tempfile
+        import comfy.model_management
 
         print(f"[HeartMuLaGenerator] Generating music...")
         print(f"[HeartMuLaGenerator] Tags: {tags}")
         print(f"[HeartMuLaGenerator] Lyrics length: {len(lyrics)} chars")
-
+        print(f"[HeartMuLaGenerator] Seed: {seed}, Batch: {batch_size}")
         print(f"[HeartMuLaGenerator] Max duration: {max_audio_length_ms / 1000:.0f}s")
 
         # Setup Progress Bar
         from comfy.utils import ProgressBar
-        # approx 80ms per frame
-        total_steps = max_audio_length_ms // 80
+        # approx 80ms per frame, multiplied by batch size
+        total_steps = (max_audio_length_ms // 80) * batch_size
         pbar = ProgressBar(total_steps)
 
         def callback(step, total):
+            # Check for interruption (allows user to cancel)
+            comfy.model_management.throw_exception_if_processing_interrupted()
             pbar.update(1)
 
-        # Generate to temporary file
-        tmp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                tmp_path = tmp.name
+        generated_waveforms = []
+        
+        for batch_idx in range(batch_size):
+            # Set seed for each batch item (seed + batch_idx ensures variation)
+            current_seed = seed + batch_idx
+            torch.manual_seed(current_seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(current_seed)
+            if torch.backends.mps.is_available():
+                torch.mps.manual_seed(current_seed)
+            
+            print(f"[HeartMuLaGenerator] Generating batch {batch_idx + 1}/{batch_size} (seed={current_seed})...")
+            
+            # Generate to temporary file
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                    tmp_path = tmp.name
 
-            with torch.no_grad():
-                pipeline(
-                    {
-                        "lyrics": lyrics,
-                        "tags": tags,
-                    },
-                    max_audio_length_ms=max_audio_length_ms,
-                    save_path=tmp_path,
-                    topk=topk,
-                    temperature=temperature,
+                with torch.no_grad():
+                    pipeline(
+                        {
+                            "lyrics": lyrics,
+                            "tags": tags,
+                        },
+                        max_audio_length_ms=max_audio_length_ms,
+                        save_path=tmp_path,
+                        topk=topk,
+                        temperature=temperature,
+                        cfg_scale=cfg_scale,
+                        callback=callback,
+                    )
 
-                    cfg_scale=cfg_scale,
-                    callback=callback,
-                )
+                # Load the generated audio
+                import torchaudio
+                waveform, sample_rate = torchaudio.load(tmp_path)
+                generated_waveforms.append(waveform)
+                
+                print(f"[HeartMuLaGenerator] Batch {batch_idx + 1} done. Duration: "
+                      f"{waveform.shape[-1] / sample_rate:.1f}s @ {sample_rate}Hz")
 
-            # Load the generated audio into ComfyUI AUDIO format
-            import torchaudio
-            waveform, sample_rate = torchaudio.load(tmp_path)
-            # AUDIO format: {"waveform": [B, C, T], "sample_rate": int}
-            audio_output = {
-                "waveform": waveform.unsqueeze(0),  # [1, C, T]
-                "sample_rate": sample_rate,
-            }
-
-            print(f"[HeartMuLaGenerator] Done. Duration: "
-                  f"{waveform.shape[-1] / sample_rate:.1f}s @ {sample_rate}Hz")
-            return (audio_output,)
-
-        finally:
-            if tmp_path and os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            finally:
+                if tmp_path and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+        
+        # Stack all generated waveforms into batch dimension
+        # generated_waveforms is a list of [C, T] tensors
+        # We need to pad them to the same length if they differ
+        max_length = max(w.shape[-1] for w in generated_waveforms)
+        padded_waveforms = []
+        for w in generated_waveforms:
+            if w.shape[-1] < max_length:
+                padding = max_length - w.shape[-1]
+                w = torch.nn.functional.pad(w, (0, padding))
+            padded_waveforms.append(w)
+        
+        # Stack: [B, C, T]
+        batch_waveform = torch.stack(padded_waveforms, dim=0)
+        
+        audio_output = {
+            "waveform": batch_waveform,  # [B, C, T]
+            "sample_rate": sample_rate,
+        }
+        
+        print(f"[HeartMuLaGenerator] All done. Generated {batch_size} audio(s).")
+        return (audio_output,)
 
 
 # Node registration
