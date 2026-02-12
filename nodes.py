@@ -236,123 +236,123 @@ class HeartTranscriptor:
 
         # Audio preparation moved to execution phase
 
-            # Build temperature fallback tuple
-            if temperature <= 0.0:
-                temp_tuple = (0.0,)
-            else:
-                temp_values = [0.0]
-                step = 0.1
-                val = step
-                while val < temperature:
-                    temp_values.append(round(val, 2))
-                    val += step
-                temp_values.append(round(temperature, 2))
-                temp_tuple = tuple(temp_values)
+        # Build temperature fallback tuple
+        if temperature <= 0.0:
+            temp_tuple = (0.0,)
+        else:
+            temp_values = [0.0]
+            step = 0.1
+            val = step
+            while val < temperature:
+                temp_values.append(round(val, 2))
+                val += step
+            temp_values.append(round(temperature, 2))
+            temp_tuple = tuple(temp_values)
 
-            print(f"[HeartTranscriptor] Transcribing audio "
-                  f"({sample_rate}Hz, {waveform.shape[-1] / sample_rate:.1f}s) ...")
+        print(f"[HeartTranscriptor] Transcribing audio "
+              f"({sample_rate}Hz, {waveform.shape[-1] / sample_rate:.1f}s) ...")
 
 
 
-            with torch.no_grad():
-                gen_kwargs = {
-                    "max_new_tokens": max_new_tokens,
-                    "num_beams": num_beams,
-                    "task": task,
-                    "condition_on_prev_tokens": condition_on_prev_tokens,
-                    "compression_ratio_threshold": compression_ratio_threshold,
-                    "temperature": temp_tuple,
-                    "logprob_threshold": logprob_threshold,
-                    "no_speech_threshold": no_speech_threshold,
-                }
-                if language != "auto":
-                    gen_kwargs["language"] = language
+        with torch.no_grad():
+            gen_kwargs = {
+                "max_new_tokens": max_new_tokens,
+                "num_beams": num_beams,
+                "task": task,
+                "condition_on_prev_tokens": condition_on_prev_tokens,
+                "compression_ratio_threshold": compression_ratio_threshold,
+                "temperature": temp_tuple,
+                "logprob_threshold": logprob_threshold,
+                "no_speech_threshold": no_speech_threshold,
+            }
+            if language != "auto":
+                gen_kwargs["language"] = language
 
-                print(f"[HeartTranscriptor] Starting pipeline with gen_kwargs: {gen_kwargs}")
-                
-                call_kwargs = {
-                    "generate_kwargs": gen_kwargs,
-                }
+            print(f"[HeartTranscriptor] Starting pipeline with gen_kwargs: {gen_kwargs}")
+            
+            call_kwargs = {
+                "generate_kwargs": gen_kwargs,
+            }
 
-                # Setup Progress Bar using LogitsProcessor (Compatible with Beam Search)
-                from transformers.generation.logits_process import LogitsProcessor, LogitsProcessorList
-                from comfy.utils import ProgressBar
+            # Setup Progress Bar using LogitsProcessor (Compatible with Beam Search)
+            from transformers.generation.logits_process import LogitsProcessor, LogitsProcessorList
+            from comfy.utils import ProgressBar
 
-                # Estimate total tokens: rough guess 2 tokens per second of audio (Lyrics are sparse)
-                duration_sec = waveform.shape[-1] / sample_rate
-                total_steps = max(1, int(duration_sec * 2))
-                pbar = ProgressBar(total_steps)
+            # Estimate total tokens: rough guess 2 tokens per second of audio (Lyrics are sparse)
+            duration_sec = waveform.shape[-1] / sample_rate
+            total_steps = max(1, int(duration_sec * 2))
+            pbar = ProgressBar(total_steps)
 
-                class ComfyProgress(LogitsProcessor):
-                    def __init__(self):
-                        pass
-                    def __call__(self, input_ids, scores):
-                        pbar.update(1)
-                        return scores
-                
-                gen_kwargs["logits_processor"] = LogitsProcessorList([ComfyProgress()])
-                if enable_chunking:
-                    call_kwargs["return_timestamps"] = True
-                    call_kwargs["chunk_length_s"] = 30
-                
-                # Create temp file and run pipeline
-                import platform
-                # Use delete=True on non-Windows to ensure cleanup even on crash
-                delete_on_close = platform.system() != "Windows"
-                tmp_path = None
-                
-                try: 
-                    with tempfile.NamedTemporaryFile(suffix=".wav", delete=delete_on_close) as tmp:
-                        tmp_path = tmp.name
-                        
-                        # Write Wave logic (Moved here)
-                        import wave
-                        import numpy as np
-                        audio_np = waveform.cpu().numpy()
-                        if audio_np.ndim == 2:
-                            audio_np = audio_np.T
-                        # Convert float to int16 PCM
-                        audio_int16 = (audio_np * 32767).clip(-32768, 32767).astype(np.int16)
-                        n_channels = 1 if audio_int16.ndim == 1 else audio_int16.shape[1]
-                        
-                        with wave.open(tmp_path, "wb") as wf:
-                            wf.setnchannels(n_channels)
-                            wf.setsampwidth(2)
-                            wf.setframerate(sample_rate)
-                            wf.writeframes(audio_int16.tobytes())
-                        
-                        tmp.flush() # Ensure data is written
-                        
-                        print(f"[HeartTranscriptor] Processing temp file: {tmp_path}")
-                        result = pipeline(tmp_path, **call_kwargs)
-                
-                except Exception as e:
-                    # If using delete=False (Windows), we should clean up here if possible
-                    if not delete_on_close and tmp_path and os.path.exists(tmp_path):
-                        try: os.remove(tmp_path)
-                        except: pass
-                    raise e
-                
-                # Manual cleanup for delete=False case (Windows)
+            class ComfyProgress(LogitsProcessor):
+                def __init__(self):
+                    pass
+                def __call__(self, input_ids, scores):
+                    pbar.update(1)
+                    return scores
+            
+            gen_kwargs["logits_processor"] = LogitsProcessorList([ComfyProgress()])
+            if enable_chunking:
+                call_kwargs["return_timestamps"] = True
+                call_kwargs["chunk_length_s"] = 30
+            
+            # Create temp file and run pipeline
+            import platform
+            # Use delete=True on non-Windows to ensure cleanup even on crash
+            delete_on_close = platform.system() != "Windows"
+            tmp_path = None
+            
+            try: 
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=delete_on_close) as tmp:
+                    tmp_path = tmp.name
+                    
+                    # Write Wave logic (Moved here)
+                    import wave
+                    import numpy as np
+                    audio_np = waveform.cpu().numpy()
+                    if audio_np.ndim == 2:
+                        audio_np = audio_np.T
+                    # Convert float to int16 PCM
+                    audio_int16 = (audio_np * 32767).clip(-32768, 32767).astype(np.int16)
+                    n_channels = 1 if audio_int16.ndim == 1 else audio_int16.shape[1]
+                    
+                    with wave.open(tmp_path, "wb") as wf:
+                        wf.setnchannels(n_channels)
+                        wf.setsampwidth(2)
+                        wf.setframerate(sample_rate)
+                        wf.writeframes(audio_int16.tobytes())
+                    
+                    tmp.flush() # Ensure data is written
+                    
+                    print(f"[HeartTranscriptor] Processing temp file: {tmp_path}")
+                    result = pipeline(tmp_path, **call_kwargs)
+            
+            except Exception as e:
+                # If using delete=False (Windows), we should clean up here if possible
                 if not delete_on_close and tmp_path and os.path.exists(tmp_path):
-                     try: os.remove(tmp_path)
-                     except: pass
-                print(f"[HeartTranscriptor] Raw result type: {type(result)}")
-                if isinstance(result, dict):
-                    print(f"[HeartTranscriptor] Result keys: {list(result.keys())}")
-                    if "chunks" in result:
-                        print(f"[HeartTranscriptor] Num chunks: {len(result['chunks'])}")
-                        for i, chunk in enumerate(result['chunks'][:5]): # Print first 5
-                             print(f"  Chunk {i}: {chunk.get('text', '')[:50]}...")
-                    if "text" in result:
-                         print(f"[HeartTranscriptor] Full text length: {len(result['text'])}")
-                         print(f"[HeartTranscriptor] First 100 chars: {result['text'][:100]}")
+                    try: os.remove(tmp_path)
+                    except: pass
+                raise e
+            
+            # Manual cleanup for delete=False case (Windows)
+            if not delete_on_close and tmp_path and os.path.exists(tmp_path):
+                 try: os.remove(tmp_path)
+                 except: pass
+            print(f"[HeartTranscriptor] Raw result type: {type(result)}")
+            if isinstance(result, dict):
+                print(f"[HeartTranscriptor] Result keys: {list(result.keys())}")
+                if "chunks" in result:
+                    print(f"[HeartTranscriptor] Num chunks: {len(result['chunks'])}")
+                    for i, chunk in enumerate(result['chunks'][:5]): # Print first 5
+                         print(f"  Chunk {i}: {chunk.get('text', '')[:50]}...")
+                if "text" in result:
+                     print(f"[HeartTranscriptor] Full text length: {len(result['text'])}")
+                     print(f"[HeartTranscriptor] First 100 chars: {result['text'][:100]}")
 
-            lyrics_text = result.get("text", "") if isinstance(result, dict) else str(result)
-            lyrics_text = lyrics_text.strip()
+        lyrics_text = result.get("text", "") if isinstance(result, dict) else str(result)
+        lyrics_text = lyrics_text.strip()
 
-            print(f"[HeartTranscriptor] Done. Final text length: {len(lyrics_text)} chars.")
-            return (lyrics_text,)
+        print(f"[HeartTranscriptor] Done. Final text length: {len(lyrics_text)} chars.")
+        return (lyrics_text,)
 
 
 
@@ -539,10 +539,10 @@ class HeartMuLaGenerator:
             "required": {
                 "pipeline": ("HEART_MULA_PIPELINE",),
                 "lyrics": ("STRING", {
-                    "default": "[Verse]\nThe sun creeps in across the floor\n"
-                               "I hear the traffic outside the door\n"
-                               "[Chorus]\nEvery day the light returns\n"
-                               "Every day the fire burns\n",
+                    "default": "[Verse]\\nThe sun creeps in across the floor\\n"
+                               "I hear the traffic outside the door\\n"
+                               "[Chorus]\\nEvery day the light returns\\n"
+                               "Every day the fire burns\\n",
                     "multiline": True,
                     "tooltip": "Lyrics text with section markers like [Verse], [Chorus], etc.",
                 }),
@@ -661,4 +661,3 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "HeartMuLaLoader": "HeartMuLa Loader 🎵",
     "HeartMuLaGenerator": "HeartMuLa Generator 🎵",
 }
-
