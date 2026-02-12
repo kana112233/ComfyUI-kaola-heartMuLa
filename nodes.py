@@ -226,7 +226,12 @@ class HeartTranscriptor:
         try:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp_path = tmp.name
-                torchaudio.save(tmp_path, waveform.cpu(), sample_rate)
+                # Use soundfile instead of torchaudio.save to avoid torchcodec dependency
+                import soundfile as sf
+                audio_np = waveform.cpu().numpy()
+                if audio_np.ndim == 2:
+                    audio_np = audio_np.T  # [C, T] -> [T, C] for soundfile
+                sf.write(tmp_path, audio_np, sample_rate)
 
             # Build temperature fallback tuple
             if temperature <= 0.0:
