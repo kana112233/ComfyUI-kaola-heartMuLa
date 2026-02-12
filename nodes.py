@@ -580,12 +580,12 @@ class HeartMuLaGenerator:
                     "step": 1,
                     "tooltip": "Number of audio variations to generate.",
                 }),
-                "max_audio_length_ms": ("INT", {
-                    "default": 240000,
-                    "min": 10000,
-                    "max": 600000,
-                    "step": 10000,
-                    "tooltip": "Maximum audio length in milliseconds.",
+                "max_audio_length_s": ("INT", {
+                    "default": 30,
+                    "min": 1,
+                    "max": 600,
+                    "step": 1,
+                    "tooltip": "Maximum audio length in seconds.",
                 }),
                 "topk": ("INT", {
                     "default": 50,
@@ -617,16 +617,18 @@ class HeartMuLaGenerator:
     CATEGORY = "HeartMuLa"
     OUTPUT_NODE = True
 
-    def generate(self, pipeline, lyrics, tags, seed, batch_size, max_audio_length_ms,
+    def generate(self, pipeline, lyrics, tags, seed, batch_size, max_audio_length_s,
                  topk, temperature, cfg_scale):
         import tempfile
         import comfy.model_management
+
+        max_audio_length_ms = max_audio_length_s * 1000
 
         print(f"[HeartMuLaGenerator] Generating music...")
         print(f"[HeartMuLaGenerator] Tags: {tags}")
         print(f"[HeartMuLaGenerator] Lyrics length: {len(lyrics)} chars")
         print(f"[HeartMuLaGenerator] Seed: {seed}, Batch: {batch_size}")
-        print(f"[HeartMuLaGenerator] Max duration: {max_audio_length_ms / 1000:.0f}s")
+        print(f"[HeartMuLaGenerator] Max duration: {max_audio_length_s}s")
 
         # Setup Progress Bar
         from comfy.utils import ProgressBar
