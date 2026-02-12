@@ -72,6 +72,55 @@ Transcribes lyrics from audio input.
 | `logprob_threshold`           | -1.0       | Log-probability filter                   |
 | `condition_on_prev_tokens`    | False      | Condition on previous tokens             |
 
+### HeartMuLa Loader 🎵
+
+Loads the HeartMuLa music generation pipeline. Requires 3 components in `ComfyUI/models/checkpoints/`:
+1. **HeartMuLa** model (e.g. `HeartMuLa-RL-oss-3B-20260123`)
+2. **HeartCodec** model (e.g. `HeartCodec-oss`)
+3. **Gen Config** directory (e.g. `HeartMuLaGen`) containing `tokenizer.json` and `gen_config.json`
+
+| Parameter        | Description                                      |
+|------------------|--------------------------------------------------|
+| `model_name`     | HeartMuLa model directory                        |
+| `codec_name`     | HeartCodec model directory                       |
+| `gen_config_dir` | Directory with tokenizer/gen_config              |
+| `version`        | `3B` or `7B` (matches model size)                |
+| `mula_dtype`     | `bfloat16` (recommended)                         |
+| `codec_dtype`    | `float32` (recommended for quality)              |
+| `lazy_load`      | Save VRAM by unloading models after inference    |
+
+### HeartMuLa Generator 🎵
+
+Generates music from lyrics and style tags.
+
+| Parameter             | Default | Description                                  |
+|-----------------------|---------|----------------------------------------------|
+| `pipeline`            | —       | Pipeline from HeartMuLa Loader               |
+| `lyrics`              | —       | Lyrics text (supports multiline)             |
+| `tags`                | —       | Style tags (e.g. "piano, pop, happy")        |
+| `max_audio_length_ms` | 240000  | Max duration in milliseconds                 |
+| `topk`                | 50      | Sampling top-k                               |
+| `temperature`         | 1.0     | Sampling temperature                         |
+| `cfg_scale`           | 1.5     | Classifier-Free Guidance scale               |
+
+### Model Download (Music Generation)
+
+To use music generation, download these additional models to `ComfyUI/models/checkpoints/`:
+
+```bash
+cd ComfyUI/models/checkpoints
+
+# 1. HeartCodec
+hf download HeartMuLa/HeartCodec-oss-20260123 --local-dir ./HeartCodec-oss
+
+# 2. Tokenizer & Config
+hf download HeartMuLa/HeartMuLaGen --local-dir ./HeartMuLaGen
+
+# 3. HeartMuLa Model (if you haven't already)
+hf download base11231/HeartMuLa-RL-oss-3B-20260123 --local-dir ./HeartMuLa-RL-oss-3B-20260123
+```
+
+
 ## Example Workflow
 
 An example workflow is included in the `examples/` folder:
