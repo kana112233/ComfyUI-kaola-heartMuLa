@@ -201,6 +201,12 @@ class HeartTranscriptor:
                     "tooltip": "Log-probability threshold for filtering "
                                "low-confidence outputs.",
                 }),
+                "seed": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 0xffffffffffffffff,
+                    "tooltip": "Random seed for reproducible results.",
+                }),
             },
             "optional": {
                 "condition_on_prev_tokens": ("BOOLEAN", {
@@ -218,7 +224,7 @@ class HeartTranscriptor:
 
     def transcribe(self, pipeline, audio, max_new_tokens, num_beams, task,
                    temperature, no_speech_threshold, compression_ratio_threshold,
-                   logprob_threshold, language, enable_chunking, condition_on_prev_tokens=False):
+                   logprob_threshold, language, enable_chunking, seed, condition_on_prev_tokens=False):
         waveform = audio["waveform"]  # [B, C, T]
         sample_rate = audio["sample_rate"]
 
@@ -233,6 +239,13 @@ class HeartTranscriptor:
             torch.mps.empty_cache()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+        # Set seed
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        if torch.backends.mps.is_available():
+            torch.mps.manual_seed(seed)
 
         # Audio preparation moved to execution phase
 
@@ -287,6 +300,8 @@ class HeartTranscriptor:
                 def __init__(self):
                     pass
                 def __call__(self, input_ids, scores):
+                    import comfy.model_management
+                    comfy.model_management.throw_exception_if_processing_interrupted()
                     pbar.update(1)
                     return scores
             
